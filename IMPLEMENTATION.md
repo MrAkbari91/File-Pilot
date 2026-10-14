@@ -25,7 +25,8 @@ advanced requirement in the master specification.
 
 ## Remaining work before the full specification is done
 
-- [ ] Worker-based/batched large-index processing and performance benchmarks.
+- [x] Worker-based/batched folder indexing and synthetic scan performance benchmarks.
+- [ ] Bound remaining organizer/storage/duplicate processing and benchmark mixed trees/network volumes.
 - [ ] Advanced organizer/category settings and additional conflict/date controls.
 - [ ] Expanded image metadata, codec matrix, and scalable similarity indexing.
 - [ ] Advanced search/history filters, CSV, retries, and metadata recovery UI.
@@ -39,12 +40,64 @@ Reasons, current behavior, and the next implementation step for each gap are rec
 
 ## Verification and limitations
 
+## Release repair — 2026-10-14
+
+- Inspected [main release run 38555800144](https://github.com/MrAkbari91/File-Pilot/actions/runs/38555800144).
+  Windows x64 and both macOS jobs passed for commit `51720860712620a41b64c1b8825f10929aed8dcf`.
+  Linux stopped during setup: `chown` could not find `node_modules/electron/dist/chrome-sandbox`.
+  The all-platform publication gate correctly prevented a partial public release.
+- Root cause: the pinned Electron package downloads its executable lazily; `npm ci` does not populate
+  its `dist` directory. Shared CI/release setup now explicitly runs `node node_modules/electron/install.js`
+  before validating and configuring the Linux sandbox helper. Renderer sandboxing remains enabled.
+- Verified the actual pinned installer with Linux x64 settings in isolated `.local` fixtures on Windows:
+  Electron 44.7.2 downloaded successfully and both `electron` and `chrome-sandbox` were present.
+  This verifies installation/layout, not Linux runtime execution.
+- The separate [v1.0.0 run](https://github.com/MrAkbari91/File-Pilot/actions/runs/38557556251) correctly
+  rejected a tag/package mismatch: package version is `0.1.0`. The error now prints the expected tag
+  and corrective steps. Use a new `v0.1.0` tag on the fixed commit after main checks pass.
+- `npm run check` passed: lint, typecheck, **62 tests**, production build. Workflow YAML and installer-before-sandbox
+  ordering validated. The repaired Linux CI run awaits the owner's new commit/push. No Git command ran.
+
+## Current milestone: worker indexing and scan performance
+
+- [x] Dedicated scanner worker with its own SQLite connection; no whole-root file arrays in main.
+- [x] Streaming directory iteration, depth-bounded handles and 256-record JavaScript batches.
+- [x] Disk-backed TEMP staging and one final atomic WAL snapshot publication; no schema migration.
+- [x] Shared cancellation checks, worker exit/error handling and status recovery after restart.
+- [x] Tests for reads while staging, mid-scan cancellation, failed SQL publication, crash after staging,
+      missing completion messages, concurrent scan rejection and successful retry.
+- [x] Synthetic 10,000/100,000-file benchmarks with event-loop and sampled memory reporting.
+- [x] Development/production Electron workflows and packaged Windows worker launch verification.
+
+### Verified results — 2026-10-14
+
+- Lint/typecheck passed. **62 tests across seven suites passed**; **two Electron workflows passed**.
+- Production build and Windows `package:dir` passed. Packaged startup, worker-backed SQLite indexing
+  and native Sharp thumbnail smoke test passed inside an isolated profile. The worker loads from ASAR.
+- Benchmark environment: Windows x64, Node 24.15.0. This is the Node scanner harness, excluding fixture
+  creation and the Electron UI. The 100,000-file run overlapped local packaging, so results are
+  illustrative measurements, not a controlled speed comparison or cross-platform guarantee.
+
+| Synthetic files | Scan duration | Main event loop p99 / max | Sampled process RSS peak | Main heap peak |
+| --------------- | ------------- | ------------------------- | ------------------------ | -------------- |
+| 10,000          | 1.704 s       | 21.00 / 21.81 ms          | 107.02 MiB               | 13.22 MiB      |
+| 100,000         | 29.170 s      | 22.22 / 46.24 ms          | 118.66 MiB               | 16.82 MiB      |
+
+Reproduce with `npm run benchmark:scan -- 10000` or `npm run benchmark:scan -- 100000`. Reports are
+saved in ignored `.local/scan-benchmark-N.json`; generated temporary fixtures are removed automatically.
+Process RSS includes the worker; main heap excludes the worker; sampling can miss brief memory spikes.
+
+Remaining: organizer/duplicate/storage processing still materializes large collections on main.
+There is no incremental filesystem watcher, full low-memory guarantee, or network-drive benchmark.
+Cancellation waits for in-flight filesystem/SQLite statements. macOS/Linux worker packaging awaits CI.
+No Git commands were run; the original `plan.md` is preserved.
+
 ## Current follow-up: release automation and direct folder selection
 
 - [x] Implement main-push preview releases and matching stable version-tag releases (remote execution pending).
 - [x] Configure Windows x64, macOS arm64/x64 and Linux x64 jobs, native packaged-runtime checks and complete-set checksum verification.
 - [x] Choose folders directly in feature screens; prepare new indexes automatically and retain selection across restarts.
-- [ ] Stream scan batches through a worker, staging SQLite writes and preserving cancelled snapshots.
+- [x] Stream scan batches through a worker, staging SQLite writes and preserving cancelled snapshots.
 - [ ] Extend timeline/conflict controls, history filtering/export, image metadata and similarity indexing.
 - [x] Add folder/release regression tests and update owner-only Git commands without running Git.
 

@@ -87,6 +87,6 @@ export function extensionFor(name: string): string {
 export function safeExtension(extension: string): string {
   return /^[a-z0-9]{1,20}$/i.test(extension) ? extension.toLowerCase() : 'no-extension';
 }
-export function abortIfNeeded(signal: AbortSignal): void {
+export function abortIfNeeded(signal: Pick<AbortSignal, 'aborted'>): void {
   if (signal.aborted) throw new AppError('CANCELLED', 'Operation cancelled.');
 }

@@ -20,6 +20,7 @@
     "electron",
     "shared",
     "tests",
+    "scripts/benchmark-scan.ts",
     "vite.config.ts",
     "vitest.config.ts",
     "playwright.config.ts"

@@ -25,6 +25,8 @@ Opening the Vite URL in a regular browser does not grant filesystem access.
 
 - Explicit native folder selection; recursive scans, exclusions, depth limits, progress, cancellation,
   error reporting, and SQLite persistence. Junctions and symbolic links are excluded.
+- Background worker indexing with 256-row batches and an atomic snapshot switch; cancellation or a
+  failed scan preserves the last committed index while the interface remains available.
 - Dashboard showing real indexed file counts, sizes, selected roots, scan details, and recent changes.
 - Category, category/extension, and modification year/month organization. Previews include destinations,
   skipped conflicts, and byte totals. Apply requires a separate native confirmation.
@@ -56,23 +58,29 @@ is handled by your operating system. There is no permanent-delete fallback.
 
 ## Commands
 
-| Command                    | Purpose                                                     |
-| -------------------------- | ----------------------------------------------------------- |
-| `npm run dev`              | Desktop app with live renderer updates                      |
-| `npm run lint`             | TypeScript linting                                          |
-| `npm run typecheck`        | Strict type checking                                        |
-| `npm test`                 | Unit and filesystem/image integration tests                 |
-| `npm run test:unit`        | Domain/parser/hash tests                                    |
-| `npm run test:integration` | Temporary-filesystem tests                                  |
-| `npm run test:e2e`         | Build and test real Electron production/development windows |
-| `npm run check`            | Lint, types, tests, production build                        |
-| `npm run build`            | Renderer and Electron bundles                               |
-| `npm run package:dir`      | Unpacked application for the current platform               |
-| `npm run package`          | Unsigned installers for the current platform                |
-| `npm run release:validate` | Validate version/tag consistency                            |
+| Command                           | Purpose                                                     |
+| --------------------------------- | ----------------------------------------------------------- |
+| `npm run dev`                     | Desktop app with live renderer updates                      |
+| `npm run lint`                    | TypeScript linting                                          |
+| `npm run typecheck`               | Strict type checking                                        |
+| `npm test`                        | Unit and filesystem/image integration tests                 |
+| `npm run test:unit`               | Domain/parser/hash tests                                    |
+| `npm run test:integration`        | Temporary-filesystem tests                                  |
+| `npm run benchmark:scan -- 10000` | Synthetic scan benchmark (automatically cleaned up)         |
+| `npm run test:e2e`                | Build and test real Electron production/development windows |
+| `npm run check`                   | Lint, types, tests, production build                        |
+| `npm run build`                   | Renderer and Electron bundles                               |
+| `npm run package:dir`             | Unpacked application for the current platform               |
+| `npm run package`                 | Unsigned installers for the current platform                |
+| `npm run release:validate`        | Validate version/tag consistency                            |
 
 Integration tests use temporary synthetic files. Windows junction tests need permission to create
 junctions; Linux GUI tests need a display (`xvfb-run --auto-servernum npm run test:e2e`).
+
+`npm run benchmark:scan -- 10000` generates and removes its own temporary files and database, and
+records duration, main event-loop delay and sampled memory in `.local/scan-benchmark-10000.json`.
+It never accepts a personal folder path. The scanner benchmark excludes fixture creation and the UI;
+results depend on the device and concurrent workload. See IMPLEMENTATION.md for measured results.
 
 ## Project structure
 
@@ -83,7 +91,9 @@ electron/
   services/
     application.ts         Native dialogs, app service orchestration, automation
     database.ts            SQLite migration and queries
-    scanner.ts             Recursive cancellable indexing
+    scanner.ts             Worker lifecycle and cancellation bridge
+    scan-worker.ts         Bounded traversal and staged SQLite indexing
+    scan-protocol.ts       Typed worker messages and batch size
     organizer.ts           Plans, exclusive moves, verified undo
     duplicates.ts          Exact, filename, pixel and dHash comparisons
     hash.ts                Streaming hashes and identity checks

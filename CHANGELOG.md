@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Fix Linux release setup by explicitly installing the pinned Electron binary before sandbox permissions.
+- Explain the expected package version/tag when a mismatched release tag is pushed.
+
+- Move traversal and scan-index publication into a worker with bounded file batches and SQLite staging.
+- Preserve the last committed snapshot on cancellation, storage errors and worker failure; record interrupted scans.
+- Add synthetic scan benchmarks and regression coverage for concurrent reads, rollback and worker recovery.
+
 - Automatic preview releases on main pushes, with Windows x64, macOS arm64/x64 and Linux x64 assets.
 - Native packaged-app smoke checks and complete installer/checksum validation before draft publication.
 - Direct native folder picker on feature screens, automatic first indexing, and remembered selection.

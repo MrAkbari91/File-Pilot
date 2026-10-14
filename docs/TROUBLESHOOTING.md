@@ -19,6 +19,9 @@
 - **Unsupported image:** codec support depends on the Sharp build. Corrupt files and images above
   25 megapixels are skipped. GIF/TIFF only compare the first frame/page.
 - **Cancelled scan:** the previous complete index remains. A new scan is required to update it.
+- **Index worker stopped unexpectedly:** retry the scan. The committed index is retained and temporary
+  staging is discarded; interrupted scan status is reconciled on restart. In development, run
+  `npm run build:main` to rebuild the worker bundle. If it repeats, report the error and platform.
 - **Export says file exists:** exports use exclusive creation. Choose a new filename instead of
   overwriting an existing file.
 - **Database startup error:** close FilePilot and preserve `filepilot.sqlite` plus any `-wal`/`-shm`
@@ -28,6 +31,13 @@
   restrictions can prevent the symlink test even when the app logic is correct.
 - **Linux Electron launch denied:** use Xvfb and a runner supporting Chromium's sandbox. Do not
   disable sandboxing in the application to work around deployment configuration.
+- **CI cannot find `chrome-sandbox`:** Electron 44 installs its runtime lazily. Run
+  `node node_modules/electron/install.js` after `npm ci` and before applying sandbox permissions;
+  the shared CI/release setup now does this explicitly. Skipping the helper check or disabling
+  sandboxing does not fix the missing runtime.
+- **Release tag/package mismatch:** the current package version requires `v0.1.0`, not `v1.0.0`.
+  Commit and push the fixes first. After main checks pass, tag that fixed commit with the matching
+  version. Re-running an old failed workflow uses its original source, not your new local changes.
 - **Install/build warnings:** the builder currently includes a development-only moderate npm advisory.
   See LIMITATIONS.md; do not run `npm audit fix --force` without reviewing resulting version changes.
 

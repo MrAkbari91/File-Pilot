@@ -44,7 +44,9 @@ export function releasePlan(version, env) {
   if (!/^[a-f0-9]{40}$/.test(env.GITHUB_SHA ?? '')) throw new Error('Missing source commit SHA.');
   const stable = env.GITHUB_REF?.startsWith('refs/tags/');
   if (stable && env.GITHUB_REF !== `refs/tags/v${version}`)
-    throw new Error('Release tag must match package.json version.');
+    throw new Error(
+      `Release tag ${env.GITHUB_REF.slice('refs/tags/'.length)} does not match package.json version ${version}. Push v${version}, or update package.json and package-lock.json before creating a new version tag.`,
+    );
   if (!stable && env.GITHUB_REF !== 'refs/heads/main')
     throw new Error('Push releases require the main branch.');
   if (!stable && !/^[1-9]\d*$/.test(env.GITHUB_RUN_NUMBER ?? ''))

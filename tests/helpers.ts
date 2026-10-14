@@ -8,7 +8,7 @@ export async function fixture() {
   const base = await mkdtemp(path.join(parent, 'filepilot-test-'));
   const rootPath = path.join(base, 'source');
   await mkdir(rootPath);
-  const db = new Database(':memory:');
+  const db = new Database(path.join(base, 'metadata.sqlite'));
   const root = db.addRoot(await realpath(rootPath));
   const scanner = new FileScannerService(db);
   return {

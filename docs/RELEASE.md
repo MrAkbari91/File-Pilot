@@ -40,6 +40,8 @@ sandbox configuration. Do not disable application sandboxing to bypass system re
 
 1. Validate source SHA, main branch or matching stable tag, and package version.
 2. Install Node 24.15.0 and locked npm dependencies independently on all four native runners.
+   Explicitly run Electron's pinned installer before configuring the Linux sandbox. Electron 44
+   downloads its runtime lazily; `npm ci` alone does not guarantee that `dist/chrome-sandbox` exists.
 3. Run lint, types, unit/integration tests, production build, and real Electron workflows.
 4. Package installers with release version and GitHub-derived homepage/repository metadata.
 5. Launch each unpacked packaged app with an isolated temporary profile; verify SQLite and native

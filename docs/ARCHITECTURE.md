@@ -21,10 +21,29 @@ Known folders reuse their existing index. Organizer, duplicate comparisons, and 
 rule previews refresh selected roots within the same cancellable job before processing. A cancelled
 preparation never continues into a preview/comparison. Search and Storage still read saved metadata.
 
-One background job runs at a time, with an AbortController and progress events. Filesystem traversal
-and hashes use asynchronous I/O; Sharp decodes asynchronously through its native worker pool with
-limited concurrency and pixel/cache limits. Synchronous SQLite work and some grouping still run in
-main: scaling limits and next steps are documented in LIMITATIONS.md.
+One application job runs at a time. Folder scanning runs in a dedicated Node worker with its own
+SQLite connection. The main thread passes only the approved root, validated settings, database path
+and a shared cancellation flag. It receives throttled progress and a terminal result, never a full
+array of file rows. Hashes use asynchronous I/O; Sharp decodes through its native worker pool with
+pixel/cache limits. Search, storage aggregation, organizer planning and duplicate grouping still use
+the main process; their scaling limits remain documented in LIMITATIONS.md.
+
+The scanner walks directories with `opendir` async iteration and a 64-entry buffer; recursion is
+bounded by the configured depth. It stages at most 256 file records per JavaScript batch into
+connection-local SQLite TEMP tables configured for file storage. Empty-folder paths are staged in
+SQLite too. The live snapshot remains readable through WAL during traversal. A final worker-owned
+transaction replaces the root's rows, empty-folder summary, scan status and duplicate cache together.
+SQLite rollback preserves the old snapshot on cancellation before commit or publication failure.
+TEMP staging disappears when the connection closes or the worker exits; no schema migration or
+persistent staging cleanup is necessary. Once COMMIT succeeds, that new snapshot is retained even if
+the process stops before delivering its result.
+
+Cancellation uses a shared atomic flag so checks do not depend on the worker's message loop during
+SQLite work. It is checked between traversal steps, batches and publication statements. Cancellation
+waits for an in-flight filesystem/SQLite call to return; it is not guaranteed to interrupt OS I/O
+instantly. The bridge waits for worker exit before exposing completion, records failed workers, and
+does not treat a clean exit without a terminal message as success. Scanning requires the app's normal
+file-backed metadata database; tests use temporary databases instead of isolated `:memory:` connections.
 
 ## Database schema, version 1
 
@@ -48,7 +67,9 @@ Root, size, and category/extension indexes support queries. Search returns 100 r
 The first schema embeds duplicate members in JSON rather than a separate member table.
 
 An index snapshot replaces the previous root contents only when traversal completes. Cancelled scans
-preserve the old snapshot. Permission/individual-file failures are counted and reported. Successful
+preserve the old snapshot. Inaccessible subfolders/individual files are counted and skipped with
+warnings; failure to open the root, an interrupted directory iteration, or a staging/publication
+failure rejects the scan. Successful
 moves update files inside approved indexed destinations; moving outside those roots removes their
 old index entries. A rescan reconciles all external changes and folder summaries.
 

@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import type {
   FileEntry,
   Root,
@@ -14,8 +15,10 @@ import { settingsSchema, searchSchema, ruleSchema } from '../../shared/contracts
 
 export class Database {
   readonly sql: DatabaseSync;
+  readonly filename: string;
   constructor(filename: string) {
-    this.sql = new DatabaseSync(filename);
+    this.filename = filename === ':memory:' ? filename : path.resolve(filename);
+    this.sql = new DatabaseSync(this.filename);
     this.sql.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
     this.sql.exec(
       `CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);`,

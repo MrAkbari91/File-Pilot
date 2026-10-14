@@ -1,123 +1,111 @@
-import { lstat, readdir } from 'node:fs/promises';
+import { Worker } from 'node:worker_threads';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { FileEntry, Progress, ScanSummary } from '../../shared/contracts';
+import type { Progress, ScanSummary } from '../../shared/contracts';
 import { Database } from './database';
-import { abortIfNeeded, categoryFor, extensionFor, messageOf, safePath } from './paths';
+import { messageOf } from './paths';
+import type { ScanWorkerInput, ScanWorkerMessage } from './scan-protocol';
+
+declare const __FILEPILOT_BUNDLED__: boolean;
+const defaultWorker =
+  typeof __FILEPILOT_BUNDLED__ !== 'undefined' && __FILEPILOT_BUNDLED__
+    ? path.join(__dirname, 'scan-worker.cjs')
+    : path.resolve('dist-electron/scan-worker.cjs');
 
 export class FileScannerService {
-  constructor(private db: Database) {}
+  private running = false;
+  constructor(
+    private db: Database,
+    private workerFile = defaultWorker,
+  ) {}
   async scan(
     rootId: string,
     recursive: boolean,
     signal: AbortSignal,
     progress: (p: Progress) => void,
   ): Promise<ScanSummary> {
+    if (this.running) throw new Error('A scan is already running.');
+    if (this.db.filename === ':memory:')
+      throw new Error('Worker indexing requires a file-backed metadata database.');
     const root = this.db.root(rootId);
-    const settings = this.db.settings();
-    const files: FileEntry[] = [];
-    const emptyFolders: string[] = [];
-    const summary: ScanSummary = { files: 0, folders: 0, skipped: 0, errors: [], cancelled: false };
     const jobId = randomUUID();
+    const summary: ScanSummary = { files: 0, folders: 0, skipped: 0, errors: [], cancelled: false };
     this.db.sql
       .prepare('INSERT INTO scan_jobs VALUES(?,?,?,?,NULL)')
       .run(jobId, rootId, new Date().toISOString(), 'running');
-    const queue = [{ folder: root.path, depth: 0 }];
+    const cancellation = new SharedArrayBuffer(4);
+    const flag = new Int32Array(cancellation);
+    const cancel = () => {
+      Atomics.store(flag, 0, 1);
+    };
+    signal.addEventListener('abort', cancel, { once: true });
+    if (signal.aborted) cancel();
+    this.running = true;
     try {
-      while (queue.length) {
-        abortIfNeeded(signal);
-        const { folder, depth } = queue.pop()!;
-        try {
-          await safePath(root.path, folder);
-          const entries = await readdir(folder, { withFileTypes: true });
-          summary.folders++;
-          if (entries.length === 0) emptyFolders.push(folder);
-          for (const entry of entries) {
-            abortIfNeeded(signal);
-            const filePath = path.join(folder, entry.name);
-            const relative = path.relative(root.path, filePath).split(path.sep).join('/');
-            if (
-              settings.exclusions.some(
-                (exclude) =>
-                  entry.name === exclude ||
-                  relative === exclude ||
-                  relative.startsWith(`${exclude}/`),
-              )
-            ) {
-              summary.skipped++;
-              continue;
-            }
-            try {
-              const stat = await lstat(filePath);
-              if (stat.isSymbolicLink()) {
-                summary.skipped++;
-                continue;
+      const result = signal.aborted
+        ? { ...summary, cancelled: true }
+        : await new Promise<ScanSummary>((resolve, reject) => {
+            const input: ScanWorkerInput = {
+              filename: this.db.filename,
+              jobId,
+              root,
+              settings: this.db.settings(),
+              recursive,
+              cancellation,
+            };
+            const worker = new Worker(this.workerFile, { workerData: input });
+            let terminal: ScanSummary | undefined;
+            let failure: Error | undefined;
+            worker.on('message', (message: ScanWorkerMessage) => {
+              if (message.type === 'progress') {
+                summary.files = message.progress.completed;
+                try {
+                  progress(message.progress);
+                } catch (error) {
+                  failure = new Error(messageOf(error));
+                  cancel();
+                }
+              } else if (message.type === 'result') terminal = message.summary;
+              else {
+                Object.assign(summary, message.summary);
+                failure = new Error(message.message);
               }
-              if (stat.isDirectory()) {
-                if (recursive && depth < settings.maxDepth)
-                  queue.push({ folder: filePath, depth: depth + 1 });
-                else summary.skipped++;
-                continue;
-              }
-              if (!stat.isFile()) {
-                summary.skipped++;
-                continue;
-              }
-              const extension = extensionFor(entry.name);
-              files.push({
-                id: randomUUID(),
-                rootId,
-                path: filePath,
-                name: entry.name,
-                extension,
-                category: categoryFor(extension),
-                size: stat.size,
-                modified: stat.mtimeMs,
-                ino: String(stat.ino),
-                dev: String(stat.dev),
-              });
-              summary.files++;
-              if (summary.files % 50 === 0)
-                progress({ kind: 'scan', completed: summary.files, message: `Indexing ${folder}` });
-            } catch (error) {
-              summary.skipped++;
-              if (summary.errors.length < 100)
-                summary.errors.push(`${filePath}: ${messageOf(error)}`);
-            }
-          }
-        } catch (error) {
-          abortIfNeeded(signal);
-          summary.skipped++;
-          if (summary.errors.length < 100) summary.errors.push(`${folder}: ${messageOf(error)}`);
-          if (folder === root.path) throw error;
-        }
-      }
-      abortIfNeeded(signal);
-      // Replace the snapshot only after a complete traversal; cancellation preserves the previous index.
-      this.db.replaceFiles(rootId, files, emptyFolders, summary);
+            });
+            worker.on('error', (error) => {
+              failure = error;
+            });
+            // Wait for the connection and TEMP staging tables to close before exposing completion.
+            worker.on('exit', (code) => {
+              if (failure) reject(failure);
+              else if (code !== 0 || !terminal)
+                reject(
+                  new Error(
+                    `Index worker stopped unexpectedly (exit ${code}). Committed index preserved.`,
+                  ),
+                );
+              else resolve(terminal);
+            });
+          });
+      this.db.sql
+        .prepare('UPDATE scan_jobs SET status=?,summary=? WHERE id=?')
+        .run(result.cancelled ? 'cancelled' : 'completed', JSON.stringify(result), jobId);
+      progress({
+        kind: 'scan',
+        completed: result.files,
+        message: result.cancelled
+          ? 'Scan cancelled. Previous index preserved.'
+          : `Indexed ${result.files} files`,
+      });
+      return result;
     } catch (error) {
-      if (signal.aborted) summary.cancelled = true;
-      else {
-        this.db.sql
-          .prepare('UPDATE scan_jobs SET status=?, summary=? WHERE id=?')
-          .run(
-            'failed',
-            JSON.stringify({ ...summary, errors: [...summary.errors, messageOf(error)] }),
-            jobId,
-          );
-        throw error;
-      }
+      // A crash after COMMIT must not relabel an already committed snapshot as failed.
+      this.db.sql
+        .prepare("UPDATE scan_jobs SET status='failed',summary=? WHERE id=? AND status='running'")
+        .run(JSON.stringify({ ...summary, errors: [...summary.errors, messageOf(error)] }), jobId);
+      throw error;
+    } finally {
+      signal.removeEventListener('abort', cancel);
+      this.running = false;
     }
-    this.db.sql
-      .prepare('UPDATE scan_jobs SET status=?, summary=? WHERE id=?')
-      .run(summary.cancelled ? 'cancelled' : 'completed', JSON.stringify(summary), jobId);
-    progress({
-      kind: 'scan',
-      completed: summary.files,
-      message: summary.cancelled
-        ? 'Scan cancelled. Previous index preserved.'
-        : `Indexed ${summary.files} files`,
-    });
-    return summary;
   }
 }

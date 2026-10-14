@@ -1,0 +1,65 @@
+name: Tagged release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24.15.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run release:validate
+      - run: npm run check
+      - if: runner.os != 'Linux'
+        run: npx playwright test
+      - if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npx playwright test
+      - run: npx electron-builder --publish never
+      - run: node scripts/validate-release.mjs --artifacts
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: installers-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+            release/SHA256SUMS-*.txt
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: installers-*
+          merge-multiple: true
+          path: artifacts
+      - name: Publish complete artifact set
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find artifacts -name 'SHA256SUMS-*.txt' | wc -l)" -eq 3
+          gh release create "$RELEASE_TAG" artifacts/* --verify-tag --title "FilePilot $RELEASE_TAG" --generate-notes

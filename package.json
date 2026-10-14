@@ -1,0 +1,106 @@
+{
+  "name": "filepilot",
+  "productName": "FilePilot",
+  "version": "0.1.0",
+  "description": "A private, local-first workspace for your files",
+  "author": "FilePilot contributors",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/main.cjs",
+  "engines": {
+    "node": ">=24.15.0 <25"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build:main": "node scripts/build-main.mjs",
+    "build": "npm run typecheck && vite build && npm run build:main",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write src electron shared tests scripts docs .github *.json *.ts *.mjs README.md IMPLEMENTATION.md CONTRIBUTING.md SECURITY.md CHANGELOG.md",
+    "format:check": "prettier --check src electron shared tests scripts docs .github *.json *.ts *.mjs README.md IMPLEMENTATION.md CONTRIBUTING.md SECURITY.md CHANGELOG.md",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:e2e": "npm run build && playwright test",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "package": "npm run build && electron-builder --publish never",
+    "package:dir": "npm run build && electron-builder --dir --publish never",
+    "release:validate": "node scripts/validate-release.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "1.57.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "sharp": "0.35.5",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "24.10.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.28.2",
+    "eslint": "10.12.0",
+    "prettier": "3.9.10",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.4"
+  },
+  "build": {
+    "appId": "app.filepilot.desktop",
+    "productName": "FilePilot",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/sharp/**",
+      "node_modules/@img/**"
+    ],
+    "npmRebuild": false,
+    "artifactName": "FilePilot-${version}-${os}-${arch}.${ext}",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.utilities",
+      "identity": null
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "maintainer": "FilePilot contributors"
+    }
+  }
+}

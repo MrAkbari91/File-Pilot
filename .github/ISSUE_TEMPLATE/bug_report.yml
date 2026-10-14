@@ -1,0 +1,16 @@
+name: Bug report
+description: Report a reproducible FilePilot problem
+body:
+  - type: input
+    id: environment
+    attributes:
+      label: FilePilot version and operating system
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps, expected result, and actual result
+      description: Use synthetic examples. Remove personal paths and filenames.
+    validations:
+      required: true

@@ -84,18 +84,48 @@ export function RootSelect({
   onChange: (id: string) => void;
   all?: boolean;
 }) {
+  const { busy, run, snapshot } = useApp();
+  useEffect(() => {
+    if (!all && !value) {
+      const saved = roots.find((root) => root.id === snapshot?.selectedRootId);
+      if (saved) onChange(saved.id);
+    }
+  }, [all, value, roots, snapshot?.selectedRootId, onChange]);
   return (
-    <label className="field">
-      Folder
-      <select aria-label="Folder" value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">{all ? 'All indexed folders' : 'Select a folder'}</option>
-        {roots.map((root) => (
-          <option key={root.id} value={root.id}>
-            {root.path}
-          </option>
-        ))}
-      </select>
-    </label>
+    <div className="field">
+      <span>Folder</span>
+      <div className="folder-picker">
+        <select
+          aria-label="Folder"
+          value={value}
+          disabled={busy}
+          onChange={(e) => {
+            onChange(e.target.value);
+            void run(() => api('selectRoot', { rootId: e.target.value }));
+          }}
+        >
+          <option value="">{all ? 'All indexed folders' : 'Select a folder'}</option>
+          {roots.map((root) => (
+            <option key={root.id} value={root.id}>
+              {root.path}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            void run(() => api('chooseRoots', { single: true })).then((roots) => {
+              if (roots?.[0]) onChange(roots[0].id);
+            })
+          }
+        >
+          <FolderOpen size={17} />
+          Choose folder
+        </button>
+      </div>
+      <small>Choose a folder directly. FilePilot prepares it automatically.</small>
+    </div>
   );
 }
 export function SafetyNote({ children }: { children: ReactNode }) {
@@ -110,7 +140,10 @@ export function FileTable({ files, total }: { files: FileEntry[]; total?: number
   const { run } = useApp();
   if (!files.length)
     return (
-      <Empty title="No files to show" description="Scan a folder or adjust your search filters." />
+      <Empty
+        title="No files to show"
+        description="Choose a folder or adjust your search filters."
+      />
     );
   return (
     <>

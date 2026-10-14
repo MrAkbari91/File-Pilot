@@ -35,7 +35,7 @@ export function Search({ initial }: { initial?: SearchInput }) {
       current = false;
       clearTimeout(timer);
     };
-  }, [filters, snapshot?.fileCount]);
+  }, [filters, snapshot]);
   const update = (next: Partial<SearchInput>) => setFilters({ ...filters, ...next, page: 0 });
   return (
     <>

@@ -3,6 +3,12 @@
 The master specification is broader than the 0.1.0 development preview. The following items remain
 explicitly unfinished; they must not be represented as production-ready capabilities.
 
+The release workflow now prepares Windows x64, macOS arm64/x64 and Linux x64 downloads on main pushes,
+with native app smoke checks and an all-artifact publication gate. Windows packaging was tested
+locally; macOS/Linux builds, installation and actual GitHub publication still await a remote run.
+Direct folder selection is available from feature screens. New folders prepare automatically;
+saved Search/Storage metadata still needs Dashboard Rescan after external filesystem changes.
+
 | Area                        | Current behavior / reason                                                                                                                                                             | Next step                                                                                                                  |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Large indexes               | Traversal is async, but each root snapshot and duplicate candidates are held in memory; SQLite commits and some grouping run on main                                                  | Move database/index/image coordination to a worker, stage scan rows in batches, benchmark large trees                      |

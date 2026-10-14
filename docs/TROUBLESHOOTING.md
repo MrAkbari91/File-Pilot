@@ -6,8 +6,11 @@
   loopback-only development origin; do not point it at an arbitrary remote website.
 - **Node SQLite import fails:** use the pinned Node 24/Electron versions and `npm ci`. Do not swap
   runtime majors without testing SQLite behavior.
-- **File changed / not indexed:** rescan its folder. Preview plans and duplicate memberships are
-  invalidated by relevant index changes; external changes require a rescan.
+- **File changed / not indexed:** Generate preview and Find matches refresh their source folders
+  automatically. For Search/Storage, use Dashboard's Rescan to reconcile external changes. Choosing
+  a new folder prepares its index automatically; existing selections reuse their saved metadata.
+- **Folder overlaps a saved folder:** select the existing parent root, or remove it in Settings
+  before choosing a child root. Removing an index entry does not delete personal files.
 - **Move fails:** inspect History. Existing destinations, links, locked files, permission errors,
   and changed content are not bypassed. A failed publication can leave an extra copy; review both
   paths and do not delete either until their contents are confirmed.

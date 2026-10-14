@@ -211,7 +211,7 @@ export function Organizer() {
       ) : (
         <Empty
           title="A plan before a change"
-          description="Choose an indexed folder and a strategy to see exactly where each file would go."
+          description="Choose a folder and a strategy to see exactly where each file would go."
         />
       )}
       <SafetyNote>

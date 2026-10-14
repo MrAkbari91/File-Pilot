@@ -15,6 +15,12 @@ roots are scanned. Destination folders must be selected through the native picke
 selected source root. Main owns generated plans in memory: Apply takes only an opaque plan ID and
 asks for native confirmation. No renderer-supplied list of file operations is executed.
 
+Feature screens share a native folder picker. `chooseRoots` validates the full selection before
+registration, prepares new or reset indexes, and persists `selectedRootId` in application settings.
+Known folders reuse their existing index. Organizer, duplicate comparisons, and manual/scheduled
+rule previews refresh selected roots within the same cancellable job before processing. A cancelled
+preparation never continues into a preview/comparison. Search and Storage still read saved metadata.
+
 One background job runs at a time, with an AbortController and progress events. Filesystem traversal
 and hashes use asynchronous I/O; Sharp decodes asynchronously through its native worker pool with
 limited concurrency and pixel/cache limits. Synchronous SQLite work and some grouping still run in

@@ -29,6 +29,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (success) setNotice({ text: success, error: false });
         return result;
       } catch (error) {
+        await refresh().catch(() => {});
         setNotice({ text: error instanceof Error ? error.message : String(error), error: true });
         return undefined;
       } finally {

@@ -4,7 +4,7 @@ import { api, bytes } from '../api';
 import { useApp } from '../context';
 import { PageHeading, Panel, FileTable, SafetyNote, Empty } from '../components/ui';
 export function Storage() {
-  const { snapshot } = useApp();
+  const { snapshot, busy, run } = useApp();
   const [storage, setStorage] = useState<StorageSummary | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -26,6 +26,15 @@ export function Storage() {
         eyebrow="STORAGE ANALYZER"
         title="Know what’s taking up space."
         description="A useful view of your indexed folders, from the biggest files to the smallest details."
+        action={
+          <button
+            className="primary"
+            disabled={busy}
+            onClick={() => void run(() => api('chooseRoots', {}))}
+          >
+            Choose folder
+          </button>
+        }
       />
       {error && (
         <div className="warning" role="alert">
@@ -61,7 +70,7 @@ export function Storage() {
           ) : (
             <Empty
               title="Your storage story starts here"
-              description="Scan a folder to see its file type distribution."
+              description="Choose a folder to see its file type distribution."
             />
           )}
         </Panel>

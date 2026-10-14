@@ -1,7 +1,5 @@
-name: CI
+name: Pull request checks
 on:
-  push:
-    branches: [main]
   pull_request:
 permissions:
   contents: read
@@ -10,21 +8,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os: [windows-2025, macos-15, macos-15-intel, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v7.1.0
-        with:
-          node-version: '24.15.0'
-          cache: npm
-      - run: npm ci
+      - uses: ./.github/actions/setup
       - run: npm run check
-      - name: Electron workflow (Windows and macOS)
-        if: runner.os != 'Linux'
-        run: npx playwright test
-      - name: Electron workflow (Linux virtual display)
-        if: runner.os == 'Linux'
-        run: xvfb-run --auto-servernum npx playwright test
+      - if: runner.os != 'Linux'
+        run: npx --no-install playwright test
+      - if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npx --no-install playwright test

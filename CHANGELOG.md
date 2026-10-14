@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Automatic preview releases on main pushes, with Windows x64, macOS arm64/x64 and Linux x64 assets.
+- Native packaged-app smoke checks and complete installer/checksum validation before draft publication.
+- Direct native folder picker on feature screens, automatic first indexing, and remembered selection.
+- Automatic source refresh before organizer, duplicate comparison and manual automation previews.
+
 ## 0.1.0 — development preview
 
 - Secure Electron application with React, TypeScript, SQLite, local themes and preferences.

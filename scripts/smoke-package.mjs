@@ -42,7 +42,7 @@ try {
   await application.evaluate(({ dialog }, selected) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] });
   }, root);
-  await page.getByRole('button', { name: 'Scan a folder', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose folder', exact: true }).click();
   await page.getByText('2', { exact: true }).waitFor();
   const search = await page.evaluate(() =>
     window.filepilot.request('search', { extension: 'png' }),

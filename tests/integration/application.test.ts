@@ -1,14 +1,14 @@
 import { beforeEach, afterEach, it, expect, vi } from 'vitest';
-import { writeFile, readFile, unlink } from 'node:fs/promises';
+import { writeFile, readFile, unlink, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { BrowserWindow } from 'electron';
 import { fixture } from '../helpers';
 import { Application } from '../../electron/services/application';
-import type { Rule } from '../../shared/contracts';
+import type { Rule, Root, OperationPlan, DuplicateResult } from '../../shared/contracts';
 
-const electronMock = vi.hoisted(() => ({ confirm: vi.fn(), trash: vi.fn() }));
+const electronMock = vi.hoisted(() => ({ confirm: vi.fn(), trash: vi.fn(), pick: vi.fn() }));
 vi.mock('electron', () => ({
-  dialog: { showMessageBox: electronMock.confirm },
+  dialog: { showMessageBox: electronMock.confirm, showOpenDialog: electronMock.pick },
   shell: { trashItem: electronMock.trash },
 }));
 let f: Awaited<ReturnType<typeof fixture>>;
@@ -21,7 +21,81 @@ beforeEach(async () => {
     () => {},
   );
   electronMock.confirm.mockReset().mockResolvedValue({ response: 1 });
+  electronMock.pick.mockReset().mockResolvedValue({ canceled: false, filePaths: [f.root.path] });
   electronMock.trash.mockReset().mockImplementation((filename: string) => unlink(filename));
+});
+
+it('chooses and indexes a new folder directly, remembering the selected folder', async () => {
+  const folder = path.join(f.base, 'new-folder');
+  await mkdir(folder);
+  await writeFile(path.join(folder, 'direct.txt'), 'direct');
+  electronMock.pick.mockResolvedValue({ canceled: false, filePaths: [folder] });
+  const roots = (await application.handle('chooseRoots', { single: true })) as Root[];
+  expect(roots).toHaveLength(1);
+  expect(roots[0]!.scannedAt).not.toBeNull();
+  expect(application.snapshot().selectedRootId).toBe(roots[0]!.id);
+  expect(f.db.search({ rootId: roots[0]!.id }).files[0]?.name).toBe('direct.txt');
+  expect(electronMock.pick).toHaveBeenCalledWith(
+    expect.objectContaining({ properties: ['openDirectory'] }),
+  );
+});
+it('reuses a saved index and cancelling a picker leaves selection untouched', async () => {
+  await f.scan();
+  const scan = vi.spyOn(application.scanner, 'scan');
+  await application.handle('chooseRoots', {});
+  expect(scan).not.toHaveBeenCalled();
+  expect(f.db.roots()).toHaveLength(1);
+  electronMock.pick.mockResolvedValueOnce({ canceled: true, filePaths: [] });
+  expect(await application.handle('chooseRoots', {})).toEqual([]);
+  expect(application.snapshot().selectedRootId).toBe(f.root.id);
+  await application.handle('removeRoot', { rootId: f.root.id });
+  expect(application.snapshot().selectedRootId).toBe('');
+});
+it('rejects overlapping selections before registering any new folder', async () => {
+  const other = path.join(f.base, 'other');
+  const child = path.join(f.root.path, 'child');
+  await mkdir(other);
+  await mkdir(child);
+  electronMock.pick.mockResolvedValueOnce({ canceled: false, filePaths: [other, child] });
+  await expect(application.handle('chooseRoots', {})).rejects.toThrow(/overlaps/);
+  expect(f.db.roots()).toHaveLength(1);
+});
+it('refreshes new files for organizer and duplicate actions without a manual scan', async () => {
+  await application.handle('chooseRoots', {});
+  await writeFile(path.join(f.root.path, 'new.txt'), 'new-content');
+  await writeFile(path.join(f.root.path, 'copy.txt'), 'new-content');
+  const plan = (await application.handle('preview', {
+    rootId: f.root.id,
+    destination: f.root.path,
+    strategy: 'category',
+    recursive: true,
+    conflict: 'skip',
+  })) as OperationPlan;
+  expect(plan.items).toHaveLength(2);
+  const result = (await application.handle('duplicates', {
+    mode: 'exact',
+    rootId: f.root.id,
+    threshold: 6,
+  })) as DuplicateResult;
+  expect(result.groups).toHaveLength(1);
+});
+it('does not create a preview after cancelling automatic preparation', async () => {
+  const preview = vi.spyOn(application.organizer, 'preview');
+  vi.spyOn(application.scanner, 'scan').mockImplementationOnce(async () => {
+    await application.handle('cancel', {});
+    return { files: 0, folders: 0, skipped: 0, errors: [], cancelled: true };
+  });
+  await expect(
+    application.handle('preview', {
+      rootId: f.root.id,
+      destination: f.root.path,
+      strategy: 'category',
+      recursive: true,
+      conflict: 'skip',
+    }),
+  ).rejects.toThrow(/cancel/i);
+  expect(preview).not.toHaveBeenCalled();
+  expect(application.busy).toBe(false);
 });
 afterEach(async () => {
   vi.useRealTimers();

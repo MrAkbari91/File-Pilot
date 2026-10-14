@@ -141,7 +141,7 @@ export function Duplicates() {
           />
           <button
             className="primary"
-            disabled={busy || !snapshot?.fileCount}
+            disabled={busy || !snapshot?.roots.length}
             onClick={() =>
               void run(() =>
                 api('duplicates', {
@@ -184,7 +184,7 @@ export function Duplicates() {
           description={
             result
               ? 'No matches were found in the selected indexed files for this comparison mode.'
-              : 'Scan a folder, choose how to compare, and review the results here.'
+              : 'Choose a folder, choose how to compare, and review the results here.'
           }
         />
       )}

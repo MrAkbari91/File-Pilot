@@ -41,12 +41,34 @@ Reasons, current behavior, and the next implementation step for each gap are rec
 
 ## Current follow-up: release automation and direct folder selection
 
-- [ ] Build/download releases automatically on main pushes, with stable version-tag releases.
-- [ ] Explicit Windows x64, macOS arm64/x64 and Linux x64 jobs; packaged-runtime tests and complete-set checksum verification.
-- [ ] Choose folders directly in feature screens; index automatically and retain selection across restarts.
+- [x] Implement main-push preview releases and matching stable version-tag releases (remote execution pending).
+- [x] Configure Windows x64, macOS arm64/x64 and Linux x64 jobs, native packaged-runtime checks and complete-set checksum verification.
+- [x] Choose folders directly in feature screens; prepare new indexes automatically and retain selection across restarts.
 - [ ] Stream scan batches through a worker, staging SQLite writes and preserving cancelled snapshots.
 - [ ] Extend timeline/conflict controls, history filtering/export, image metadata and similarity indexing.
-- [ ] Add regression tests and update owner-only Git commands without running Git.
+- [x] Add folder/release regression tests and update owner-only Git commands without running Git.
+
+### Follow-up verification — 2026-10-14
+
+- Lint and strict typecheck passed; **55 tests across six suites passed**.
+- **Two real Electron workflows passed**, including first selection from Organizer without visiting
+  Dashboard, automatic indexing, files arriving after selection, cancel, persisted selection after
+  restart, and an 800px folder-picker layout. The new screenshot was visually inspected.
+- Release tests cover push-version uniqueness, retry stability, mismatched tags, seven required
+  installers, four manifests, missing/empty/unexpected artifacts and checksum tampering. Mocked REST
+  tests cover complete draft publication, failed uploads, draft recovery, wrong-source rejection,
+  and no mutation of an existing published release. No release was actually published from tests.
+- Production build and Windows NSIS packaging passed. The rebuilt packaged executable passed startup,
+  SQLite indexing and native Sharp thumbnail checks with isolated synthetic files. The installer
+  checksum was generated and validated.
+- Workflow/composite-action YAML parsed successfully. GitHub action versions and runner architectures
+  were checked against official sources. Linux prerequisites use Ubuntu 24.04's t64 package names.
+- macOS/Linux runtime checks and actual GitHub publication are configured but **not yet executed**.
+  Installer installation/uninstallation and OS trust prompts remain unverified. Windows builds are
+  unsigned; macOS CI uses ad-hoc signing without notarization.
+- Search/Storage reuse saved indexes; Organizer, Duplicates and rule previews refresh automatically.
+  Dashboard Rescan remains for external changes in index-only views; there is no folder watcher yet.
+- No Git command was executed; `plan.md` remains unchanged. Owner push instructions are in docs/RELEASE.md.
 
 ## Previous verified baseline (0.1.0)
 

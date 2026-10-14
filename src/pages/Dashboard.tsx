@@ -14,11 +14,7 @@ import { useApp } from '../context';
 import { Empty, PageHeading, Panel, SafetyNote } from '../components/ui';
 export function Dashboard({ navigate }: { navigate: (page: string) => void }) {
   const { snapshot, busy, run } = useApp();
-  const addFolders = () =>
-    run(async () => {
-      const roots = await api('chooseRoots', {});
-      for (const root of roots) await api('scan', { rootId: root.id, recursive: true });
-    });
+  const addFolders = () => run(() => api('chooseRoots', {}));
   return (
     <>
       <PageHeading
@@ -28,7 +24,7 @@ export function Dashboard({ navigate }: { navigate: (page: string) => void }) {
         action={
           <button className="primary" disabled={busy} onClick={() => void addFolders()}>
             <FolderPlus size={18} />
-            Scan a folder
+            Choose folder
           </button>
         }
       />

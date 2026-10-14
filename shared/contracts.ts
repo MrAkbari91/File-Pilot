@@ -121,6 +121,7 @@ export type AssistantIntent =
   | { supported: false; explanation: string };
 export interface Snapshot {
   roots: Root[];
+  selectedRootId: string;
   settings: Settings;
   fileCount: number;
   totalSize: number;
@@ -139,7 +140,8 @@ export interface StorageSummary {
 
 export const requestSchemas = {
   snapshot: z.object({}),
-  chooseRoots: z.object({}),
+  chooseRoots: z.object({ single: z.boolean().default(false) }),
+  selectRoot: z.object({ rootId: z.union([z.string().uuid(), z.literal('')]) }),
   chooseDestination: z.object({}),
   removeRoot: z.object({ rootId: z.string().uuid() }),
   scan: z.object({ rootId: z.string().uuid(), recursive: z.boolean().default(true) }),
@@ -180,6 +182,7 @@ export type Request<K extends Method> = z.input<(typeof requestSchemas)[K]>;
 export interface ResponseMap {
   snapshot: Snapshot;
   chooseRoots: Root[];
+  selectRoot: void;
   chooseDestination: string | null;
   removeRoot: void;
   scan: ScanSummary;

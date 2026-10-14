@@ -39,11 +39,17 @@ Opening the Vite URL in a regular browser does not grant filesystem access.
 
 ## First session
 
-1. Use **Scan a folder** and choose a small test folder first. Indexing only reads metadata.
+1. Use **Choose folder** on Dashboard, Smart Organizer, Duplicate Center, Search, Automation, or
+   Storage Analyzer. New folders are indexed automatically; there is no separate scan prerequisite.
 2. Review **Search**, **Storage Analyzer**, or **Duplicate Center**.
 3. In **Smart Organizer**, choose a folder and strategy, then **Generate preview**.
 4. Review source and destination paths. **Apply moves** asks for confirmation again.
 5. Use **History** to inspect results or undo unchanged moves into an available original path.
+
+Saved folders remain available after restart. Organizer restores the last chosen folder; generating
+a preview or finding duplicates refreshes its files automatically. Search and Storage use the saved
+index; Dashboard's **Rescan** can refresh external changes for those views. No filesystem watcher is
+running. Overlapping parent/child roots must be resolved in Settings before adding a new root.
 
 Keep your own backups. Interrupted filesystem operations can require manual recovery. Trash restoration
 is handled by your operating system. There is no permanent-delete fallback.
@@ -92,7 +98,7 @@ src/
   styles.css               Centralized light/dark design tokens and layout
 scripts/                   Development, bundling, release validation
 tests/                     Unit, integration, and Electron workflow tests
-.github/workflows/         Cross-platform checks and tagged release builds
+.github/workflows/         Cross-platform checks, push previews and tagged stable releases
 docs/                      Architecture, privacy, usage, limitations, release steps
 ```
 
@@ -104,8 +110,9 @@ sanitized release screenshots here before public distribution.
 
 ## Distribution and Git
 
-Windows NSIS x64, macOS DMG/ZIP for the host architecture, and Linux AppImage/DEB for the host
-architecture are configured. A configuration is not proof of platform support. Check
+Every push to **main** triggers a downloadable preview release after all checks pass: Windows NSIS
+x64, macOS DMG/ZIP for both Apple Silicon and Intel, and Linux AppImage/DEB x64. Matching version tags
+publish stable releases. A configuration is not proof of platform support. Check
 [verification status](IMPLEMENTATION.md) before distributing an artifact.
 
 All Git commands remain under the project owner's control. The coding agent has not run Git.

@@ -16,7 +16,7 @@ import { FileScannerService } from './scanner';
 import { FileOrganizerService } from './organizer';
 import { DuplicateDetectionService, thumbnail } from './duplicates';
 import { interpret } from './assistant';
-import { AppError, canonicalDirectory, inside, messageOf, safePath } from './paths';
+import { abortIfNeeded, AppError, canonicalDirectory, inside, messageOf, safePath } from './paths';
 import { assertUnchanged, hashFile } from './hash';
 
 export class Application {
@@ -71,6 +71,7 @@ export class Application {
     const groups = this.db.groups();
     return {
       roots: this.db.roots(),
+      selectedRootId: this.db.get('selectedRootId', ''),
       settings: this.db.settings(),
       fileCount: Number(totals.count),
       totalSize: Number(totals.size),
@@ -135,6 +136,7 @@ export class Application {
       try {
         await this.job(async (signal) => {
           await this.scanner.scan(rule.rootId, true, signal, this.progress);
+          abortIfNeeded(signal);
           const plan = await this.runRule(rule.id);
           this.progress({
             kind: 'automation',
@@ -169,29 +171,49 @@ export class Application {
       case 'snapshot':
         return this.snapshot();
       case 'chooseRoots': {
-        const choice = await dialog.showOpenDialog({
-          title: 'Choose folders FilePilot may index',
-          properties: ['openDirectory', 'multiSelections'],
-        });
-        if (choice.canceled) return [];
-        const roots = [];
-        for (const input of choice.filePaths) {
-          const folder = await canonicalDirectory(input);
-          if (folder === path.parse(folder).root)
-            throw new AppError('ROOT', 'Select a specific folder instead of an entire disk.');
-          const overlap = this.db
-            .roots()
-            .find((root) => inside(root.path, folder) || inside(folder, root.path));
-          if (overlap) {
-            if (overlap.path === folder) roots.push(overlap);
-            else
+        const { single } = requestSchemas.chooseRoots.parse(raw);
+        return this.job(async (signal) => {
+          const choice = await dialog.showOpenDialog({
+            title: 'Choose a folder to work with',
+            properties: single ? ['openDirectory'] : ['openDirectory', 'multiSelections'],
+          });
+          if (choice.canceled) return [];
+          const folders = await Promise.all(choice.filePaths.map(canonicalDirectory));
+          // Validate the complete selection before adding any roots.
+          const approved = this.db.roots().map((root) => root.path);
+          for (const folder of folders) {
+            if (folder === path.parse(folder).root)
+              throw new AppError('ROOT', 'Select a specific folder instead of an entire disk.');
+            if (
+              approved.some(
+                (existing) =>
+                  existing !== folder && (inside(existing, folder) || inside(folder, existing)),
+              )
+            )
               throw new AppError(
                 'OVERLAP',
-                'This folder overlaps an existing root. Remove the overlapping root first.',
+                'This folder overlaps a saved folder. Choose that saved folder or remove it in Settings first.',
               );
-          } else roots.push(this.db.addRoot(folder));
-        }
-        return roots;
+            if (!approved.includes(folder)) approved.push(folder);
+          }
+          const roots = [];
+          for (const folder of [...new Set(folders)]) {
+            abortIfNeeded(signal);
+            const root = this.db.addRoot(folder);
+            // Reuse persisted metadata when choosing a known folder. Feature actions refresh it as needed.
+            if (!root.scannedAt) await this.scanner.scan(root.id, true, signal, this.progress);
+            abortIfNeeded(signal);
+            roots.push(this.db.root(root.id));
+          }
+          if (roots[0]) this.db.set('selectedRootId', roots[0].id);
+          return roots;
+        });
+      }
+      case 'selectRoot': {
+        const { rootId } = requestSchemas.selectRoot.parse(raw);
+        if (rootId) this.db.root(rootId);
+        this.db.set('selectedRootId', rootId);
+        return;
       }
       case 'chooseDestination': {
         const choice = await dialog.showOpenDialog({
@@ -207,6 +229,7 @@ export class Application {
         const { rootId } = requestSchemas.removeRoot.parse(raw);
         this.db.transaction(() => {
           this.db.sql.prepare('DELETE FROM indexed_roots WHERE id=?').run(rootId);
+          if (this.db.get('selectedRootId', '') === rootId) this.db.set('selectedRootId', '');
           this.db.clearDuplicates();
           for (const rule of this.db.rules().filter((r) => r.rootId === rootId))
             this.db.sql.prepare('DELETE FROM automation_rules WHERE id=?').run(rule.id);
@@ -227,8 +250,14 @@ export class Application {
         return this.db.search(requestSchemas.search.parse(raw));
       case 'storage':
         return this.storage();
-      case 'preview':
-        return this.job(() => this.organizer.preview(requestSchemas.preview.parse(raw)));
+      case 'preview': {
+        const input = requestSchemas.preview.parse(raw);
+        return this.job(async (signal) => {
+          await this.scanner.scan(input.rootId, true, signal, this.progress);
+          abortIfNeeded(signal);
+          return this.organizer.preview(input);
+        });
+      }
       case 'execute': {
         const { planId } = requestSchemas.execute.parse(raw);
         return this.job(async (signal) => {
@@ -244,9 +273,14 @@ export class Application {
       }
       case 'duplicates': {
         const d = requestSchemas.duplicates.parse(raw);
-        return this.job((signal) =>
-          this.duplicates.detect(d.mode, d.rootId, d.threshold, signal, this.progress),
-        );
+        return this.job(async (signal) => {
+          const roots = d.rootId ? [this.db.root(d.rootId)] : this.db.roots();
+          for (const root of roots) {
+            await this.scanner.scan(root.id, true, signal, this.progress);
+            abortIfNeeded(signal);
+          }
+          return this.duplicates.detect(d.mode, d.rootId, d.threshold, signal, this.progress);
+        });
       }
       case 'trash': {
         const { groupId, fileIds } = requestSchemas.trash.parse(raw);
@@ -385,7 +419,14 @@ export class Application {
           .run(requestSchemas.deleteRule.parse(raw).id);
         return;
       case 'runRule':
-        return this.job(() => this.runRule(requestSchemas.runRule.parse(raw).id));
+        return this.job(async (signal) => {
+          const { id } = requestSchemas.runRule.parse(raw);
+          const rule = this.db.rules().find((rule) => rule.id === id);
+          if (!rule) throw new AppError('RULE', 'Rule not found.');
+          await this.scanner.scan(rule.rootId, true, signal, this.progress);
+          abortIfNeeded(signal);
+          return this.runRule(id);
+        });
       case 'resetIndex': {
         await this.confirm(
           'Reset the local file index?',

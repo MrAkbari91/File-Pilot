@@ -1,40 +1,55 @@
-import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { readFile, readdir, writeFile, stat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-const pkg = JSON.parse(await readFile('package.json', 'utf8'));
-const tag = process.env.RELEASE_TAG;
-if (!/^\d+\.\d+\.\d+$/.test(pkg.version))
-  throw new Error('Package version must use stable semantic versioning.');
-if (tag && tag !== `v${pkg.version}`)
-  throw new Error(`Tag ${tag} does not match package version ${pkg.version}.`);
-if (process.argv.includes('--artifacts')) {
-  const files = await readdir('release');
-  const extensions =
-    process.platform === 'win32'
-      ? ['.exe']
-      : process.platform === 'darwin'
-        ? ['.dmg', '.zip']
-        : ['.AppImage', '.deb'];
-  const artifacts = files.filter(
-    (name) =>
-      extensions.some((ext) => name.endsWith(ext)) &&
-      name.startsWith(`FilePilot-${pkg.version}-`) &&
-      name.includes(`-${process.arch}.`),
-  );
-  for (const ext of extensions)
-    if (!artifacts.some((name) => name.endsWith(ext)))
-      throw new Error(`Missing ${process.platform}/${process.arch} ${ext} artifact.`);
-  const checksums = [];
-  for (const name of artifacts) {
-    const hash = createHash('sha256');
-    for await (const chunk of createReadStream(path.join('release', name))) hash.update(chunk);
-    checksums.push(`${hash.digest('hex')}  ${name}`);
-  }
-  await writeFile(
-    path.join('release', `SHA256SUMS-${process.platform}-${process.arch}.txt`),
-    `${checksums.join('\n')}\n`,
-  );
-  console.log(`Validated ${artifacts.length} installer/archive artifacts; checksums written.`);
+import { releaseTargets, artifactNames } from './release-plan.mjs';
+
+export async function sha256(filename) {
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(filename)) hash.update(chunk);
+  return hash.digest('hex');
 }
-console.log(`Release version validated: ${pkg.version}`);
+export async function validateArtifacts(directory, version, targets, verify = false) {
+  if (!/^\d+\.\d+\.\d+(?:-preview\.\d+)?$/.test(version))
+    throw new Error('Invalid release version.');
+  const files = await readdir(directory);
+  const expected = targets.flatMap((target) => artifactNames(version, target));
+  const actual = files.filter((name) => /\.(exe|dmg|zip|AppImage|deb)$/.test(name));
+  if (expected.length !== actual.length || expected.some((name) => !actual.includes(name)))
+    throw new Error('Missing or unexpected release artifacts.');
+  const manifests = [];
+  for (const target of targets) {
+    const lines = [];
+    for (const name of artifactNames(version, target)) {
+      const filename = path.join(directory, name);
+      const info = await stat(filename);
+      if (!info.isFile() || !info.size) throw new Error(`Empty or invalid artifact: ${name}`);
+      lines.push(`${await sha256(filename)}  ${name}`);
+    }
+    const name = `SHA256SUMS-${target.platform}-${target.arch}.txt`;
+    const content = `${lines.join('\n')}\n`;
+    if (verify) {
+      if ((await readFile(path.join(directory, name), 'utf8')).replaceAll('\r\n', '\n') !== content)
+        throw new Error(`Checksum mismatch: ${name}`);
+    } else await writeFile(path.join(directory, name), content);
+    manifests.push(name);
+  }
+  return [...expected, ...manifests];
+}
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const pkg = JSON.parse(await readFile('package.json', 'utf8'));
+  const version = process.env.RELEASE_VERSION || pkg.version;
+  if (process.env.RELEASE_TAG && process.env.RELEASE_TAG !== `v${version}`)
+    throw new Error('Release tag and version differ.');
+  if (process.argv.includes('--artifacts') || process.argv.includes('--all')) {
+    const all = process.argv.includes('--all');
+    const targets = all
+      ? releaseTargets
+      : releaseTargets.filter((t) => t.platform === process.platform && t.arch === process.arch);
+    if (!targets.length) throw new Error('Unsupported build platform.');
+    const files = await validateArtifacts(all ? 'artifacts' : 'release', version, targets, all);
+    console.log(`Validated ${files.length} release files for ${version}.`);
+  } else if (!/^\d+\.\d+\.\d+$/.test(version))
+    throw new Error('Package version must use stable semantic versioning.');
+}

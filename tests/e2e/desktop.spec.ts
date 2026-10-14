@@ -57,7 +57,13 @@ test('desktop workflow, secure IPC, real files, themes, and restart persistence'
     await application.evaluate(({ dialog }, selected) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] });
     }, root);
-    await page.getByRole('button', { name: 'Scan a folder', exact: true }).click();
+    // The very first folder can be chosen from the feature screen without visiting Dashboard.
+    await page.getByRole('button', { name: 'Smart Organizer', exact: true }).click();
+    await page.getByRole('button', { name: 'Choose folder', exact: true }).click();
+    await expect(page.getByLabel('Folder', { exact: true }).locator('option:checked')).toHaveText(
+      root,
+    );
+    await page.getByRole('button', { name: 'Dashboard', exact: true }).click();
     await expect(page.getByText('3', { exact: true })).toBeVisible();
     await mkdir('.local', { recursive: true });
     await page.screenshot({ path: '.local/dashboard-light.png', fullPage: true });
@@ -68,7 +74,11 @@ test('desktop workflow, secure IPC, real files, themes, and restart persistence'
     await selections.first().check();
     await expect(selections.nth(1)).toBeDisabled();
     await page.getByRole('button', { name: 'Smart Organizer', exact: true }).click();
-    await page.getByLabel('Folder', { exact: true }).selectOption({ label: root });
+    await expect(page.getByLabel('Folder', { exact: true }).locator('option:checked')).toHaveText(
+      root,
+    );
+    // A file arriving after folder selection is included without any Rescan click.
+    await writeFile(path.join(root, 'arrived-later.txt'), 'new file');
     await page.getByRole('button', { name: 'Generate preview' }).click();
     await expect(page.getByRole('heading', { name: 'Review your plan' })).toBeVisible();
     expect(await readFile(path.join(root, 'invoice.txt'), 'utf8')).toBe('invoice content');
@@ -76,21 +86,21 @@ test('desktop workflow, secure IPC, real files, themes, and restart persistence'
     await application.evaluate(({ dialog }) => {
       dialog.showMessageBox = async () => ({ response: 0, checkboxChecked: false });
     });
-    await page.getByRole('button', { name: 'Apply 3 moves' }).click();
+    await page.getByRole('button', { name: 'Apply 4 moves' }).click();
     await expect(page.getByText('No changes made.')).toBeVisible();
     expect(await readFile(path.join(root, 'invoice.txt'), 'utf8')).toBe('invoice content');
     await application.evaluate(({ dialog }) => {
       dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
     });
-    await page.getByRole('button', { name: 'Apply 3 moves' }).click();
+    await page.getByRole('button', { name: 'Apply 4 moves' }).click();
     await expect(page.getByRole('heading', { name: 'A plan before a change' })).toBeVisible();
     expect(await readFile(path.join(root, 'Documents', 'invoice.txt'), 'utf8')).toBe(
       'invoice content',
     );
     await page.getByRole('button', { name: 'History', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Undo move' })).toHaveCount(3);
+    await expect(page.getByRole('button', { name: 'Undo move' })).toHaveCount(4);
     await page.getByRole('button', { name: 'Undo move' }).first().click();
-    await expect(page.getByRole('button', { name: 'Undo move' })).toHaveCount(2);
+    await expect(page.getByRole('button', { name: 'Undo move' })).toHaveCount(3);
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await page.getByRole('button', { name: 'Dark', exact: true }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
@@ -112,7 +122,26 @@ test('desktop workflow, secure IPC, real files, themes, and restart persistence'
     const reopened = await application.firstWindow();
     await expect(reopened.locator('html')).toHaveAttribute('data-theme', 'dark');
     await reopened.getByRole('button', { name: 'History', exact: true }).click();
-    await expect(reopened.getByRole('button', { name: 'Undo move' })).toHaveCount(2);
+    await expect(reopened.getByRole('button', { name: 'Undo move' })).toHaveCount(3);
+    await reopened.getByRole('button', { name: 'Smart Organizer', exact: true }).click();
+    await expect(
+      reopened.getByLabel('Folder', { exact: true }).locator('option:checked'),
+    ).toHaveText(root);
+    await application.evaluate(({ dialog }) => {
+      dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] });
+    });
+    await reopened.getByRole('button', { name: 'Choose folder', exact: true }).click();
+    await expect(
+      reopened.getByLabel('Folder', { exact: true }).locator('option:checked'),
+    ).toHaveText(root);
+    await expect(reopened.getByRole('button', { name: 'Generate preview' })).toBeEnabled();
+    await application.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0]!.setSize(800, 650),
+    );
+    await reopened.screenshot({ path: '.local/organizer-folder-small.png', fullPage: true });
+    expect(await reopened.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
   } finally {
     await application?.close();
     if (path.dirname(base) !== parent || !path.basename(base).startsWith('filepilot-e2e-'))

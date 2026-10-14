@@ -1234,3 +1234,22 @@ td strong {
     min-height: calc(100vh - 115px);
   }
 }
+.folder-picker {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+}
+.folder-picker select {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+.folder-picker button {
+  flex-shrink: 0;
+}
+@media (max-width: 1000px) {
+  .folder-picker {
+    flex-direction: column;
+  }
+}
